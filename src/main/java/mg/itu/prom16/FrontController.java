@@ -21,7 +21,6 @@ public class FrontController extends HttpServlet {
         
         // Récupérer l'URL tapée par l'utilisateur
         StringBuffer url = request.getRequestURL();
-        int i = 0;
         
         // Vous pouvez également récupérer la chaîne de requête (query string) si nécessaire
         String queryString = request.getQueryString();
