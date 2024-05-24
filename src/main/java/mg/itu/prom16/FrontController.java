@@ -1,34 +1,39 @@
 package mg.itu.prom16;
 
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.List;
 
-import annotation.Controller;
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import java.util.HashMap;
+
+import mg.itu.prom16.annotation.Controller;
+import mg.itu.prom16.annotation.Get;
 import mg.itu.prom16.util.ClassScanner;
+import mg.itu.prom16.util.Mapping;
+
 
 public class FrontController extends HttpServlet {
-
-    private boolean isScanned; 
-    private List<Class<?>> classes;
+    
     private String basePackage ;
-
+    HashMap<String , Mapping> listMapping;
 
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
-        
-        isScanned = false;
-        classes = new ArrayList<Class<?>>();
-        // Obtenez la valeur du paramètre contextConfigLocation
         // Obtenez la valeur du package
         basePackage = config.getInitParameter("basePackageName");
+        initHashMap();
     }
 
     protected void print(HttpServletResponse response) throws IOException{
@@ -39,20 +44,48 @@ public class FrontController extends HttpServlet {
         out.println("</body></html>");
     }
 
-    protected void initVariable() throws Exception {
-        try {
-            classes = ClassScanner.scanClasses(basePackage, Controller.class);
-            isScanned = true;
-        } catch (Exception e) {
-            isScanned = false;
+    protected void displayListMapping(PrintWriter out) {
+        for (Map.Entry<String, Mapping> e : listMapping.entrySet()) {
+            String key = e.getKey();
+            Mapping value = e.getValue();
+
+            out.println("<ul> URL : " + key + "</ul>");
+            out.println("<li> Class name :  "+ value.getClassName() +" </li> <li> Method name : "+ value.getMethodName() +"</li>");
+        }
+    }
+
+    protected void display404NotFound(PrintWriter out, String requette) {
+        out.println("<style>body{font-family:Arial,sans-serif;text-align:center;}h1{color: #333;}img {max-width: 100%;height:auto; margin-top:20px; }</style>");
+        out.println("<h1> 404 - Page not found </h1><p>La requette "+ requette +"</p>");
+        out.println("<p>Sorry, the page you are looking for might have been removed, had its name changed, or is temporarily unavailable.</p>");
+    }
+
+    protected void initHashMap() throws ServletException {
+        try 
+        {
+            List<Class<?>> classes = ClassScanner.scanClasses(basePackage, Controller.class);
+            listMapping = new HashMap<String, Mapping>();
+
+            for (Class<?> class1 : classes) {
+                Method[] methods = class1.getDeclaredMethods();
+            
+                for (Method method : methods) {
+                    if (method.isAnnotationPresent(Get.class)) {
+                        String valueAnnotation = method.getAnnotation(Get.class).value();
+                        Mapping mapping = new Mapping(class1.getSimpleName(), method.getName());
+                        this.listMapping.put(valueAnnotation, mapping);
+                    }
+                }
+            }
+        } 
+        catch (Exception e) {
             throw new ServletException(e);
         }
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-                print(response);
-                
+        
         PrintWriter out = response.getWriter();
         
         // Récupérer l'URL tapée par l'utilisateur
@@ -71,21 +104,20 @@ public class FrontController extends HttpServlet {
         System.out.println(" Partie de l'URL après le nom d'hôte et le port : " + relativeURI);
 
         try {
-            if (!isScanned) {
-                initVariable();
+            boolean isPresent = listMapping.containsKey(relativeURI);
+            if (!isPresent) {
+                // 404 not found 
+               display404NotFound(out, url.toString());
+               return;           
             }
 
-            out.println("Les Controllers disponibles : ");
-
-            out.println("<ul>");
-            for (Class<?> class1 : classes) {
-                out.println("<li>" + class1.getSimpleName() + "</li>");
-            }
-            out.println("</ul>");
+            Mapping mapping =  listMapping.get(relativeURI);
+            print(response);
+            out.println("<ul><h2> URL : " + relativeURI + "</h2>");
+            out.println("<li> Controller class name :  "+ mapping.getClassName() +" </li> <li> Method name : "+ mapping.getMethodName() +"</li></ul>");
         } 
-        
         catch (Exception e) {
-            out.println(e.getMessage());
+            e.printStackTrace();
         }
     }
 

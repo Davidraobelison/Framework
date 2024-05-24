@@ -2,8 +2,8 @@ package mg.itu.prom16.annotation;
 import java.lang.annotation.*;
 
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.FIELD})
+@Target({ElementType.METHOD})
 
-public @interface Controller {
+public @interface Get {
     String value() default "";
 }
