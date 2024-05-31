@@ -1,7 +1,6 @@
-package mg.itu.prom16;
+package mg.itu.prom16.servlet;
 
 
-import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
@@ -11,7 +10,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -21,7 +19,6 @@ import mg.itu.prom16.annotation.Controller;
 import mg.itu.prom16.annotation.Get;
 import mg.itu.prom16.util.ClassScanner;
 import mg.itu.prom16.util.Mapping;
-
 
 public class FrontController extends HttpServlet {
     
@@ -50,7 +47,7 @@ public class FrontController extends HttpServlet {
             Mapping value = e.getValue();
 
             out.println("<ul> URL : " + key + "</ul>");
-            out.println("<li> Class name :  "+ value.getClassName() +" </li> <li> Method name : "+ value.getMethodName() +"</li>");
+            out.println("<li> Class name :  "+ value.getClass1().getSimpleName() +" </li> <li> Method name : "+ value.getMethod().getName() +"</li>");
         }
     }
 
@@ -72,7 +69,7 @@ public class FrontController extends HttpServlet {
                 for (Method method : methods) {
                     if (method.isAnnotationPresent(Get.class)) {
                         String valueAnnotation = method.getAnnotation(Get.class).value();
-                        Mapping mapping = new Mapping(class1.getSimpleName(), method.getName());
+                        Mapping mapping = new Mapping(class1, method);
                         this.listMapping.put(valueAnnotation, mapping);
                     }
                 }
@@ -111,10 +108,17 @@ public class FrontController extends HttpServlet {
                return;           
             }
 
+            // Mapping correspondant a la requette tapee qui a  (Method, Class)
             Mapping mapping =  listMapping.get(relativeURI);
             print(response);
             out.println("<ul><h2> URL : " + relativeURI + "</h2>");
-            out.println("<li> Controller class name :  "+ mapping.getClassName() +" </li> <li> Method name : "+ mapping.getMethodName() +"</li></ul>");
+            out.println("<li> Controller class name :  "+ mapping.getClass1().getName() +" </li><li> Method name : "+ mapping.getMethod().getName() +"</li></ul>");
+
+            // invoke methode 
+            Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
+            Object valueFunction = mapping.getMethod().invoke(instance);
+
+            out.println("Valeur de la fonction : " + valueFunction.toString());
         } 
         catch (Exception e) {
             e.printStackTrace();
