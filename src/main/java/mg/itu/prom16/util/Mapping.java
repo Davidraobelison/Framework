@@ -1,30 +1,33 @@
 package mg.itu.prom16.util;
 
+import java.lang.reflect.Method;
+
 public class Mapping {
-    String className;
-    String methodName;
-    
-    public Mapping(String className, String methodName) {
-        this.className = className;
-        this.methodName = methodName;
-    }
-
-    public String getClassName() {
-        return className;
-    }
-
-    public void setClassName(String className) {
-        this.className = className;
-    }
-
-    public String getMethodName() {
-        return methodName;
-    }
-
-    public void setMethodName(String methodName) {
-        this.methodName = methodName;
-    }
+    Method method;
+    Class<?> class1;
 
     
-    
+    public Mapping(Class<?> class1, Method method) {
+        this.class1 = class1;
+        this.method = method;
+    }
+
+
+    public Method getMethod() {
+        return method;
+    }
+
+
+    public void setMethod(Method method) {
+        this.method = method;
+    }
+
+
+    public Class<?> getClass1() {
+        return class1;
+    }
+
+    public void setClass1(Class<?> class1) {
+        this.class1 = class1;
+    }
 }
