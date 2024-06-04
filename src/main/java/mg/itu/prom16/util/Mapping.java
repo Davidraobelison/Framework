@@ -22,6 +22,7 @@ public class Mapping {
         this.method = method;
     }
 
+
     public Class<?> getClass1() {
         return class1;
     }
