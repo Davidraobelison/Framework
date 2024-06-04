@@ -1,6 +1,6 @@
 package mg.itu.prom16.servlet;
 
-
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
@@ -12,13 +12,14 @@ import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
-
 import java.util.HashMap;
 
 import mg.itu.prom16.annotation.Controller;
 import mg.itu.prom16.annotation.Get;
 import mg.itu.prom16.util.ClassScanner;
 import mg.itu.prom16.util.Mapping;
+import mg.itu.prom16.util.ModelView;
+
 
 public class FrontController extends HttpServlet {
     
@@ -84,41 +85,45 @@ public class FrontController extends HttpServlet {
             throws ServletException, IOException {
         
         PrintWriter out = response.getWriter();
-        
-        // Récupérer l'URL tapée par l'utilisateur
-        StringBuffer url = request.getRequestURL();
-
-        // Récupérer l'URL apres le port et le host
-        // Récupérer le contexte (nom) de l'application
-        String requestURI = request.getRequestURI();
-        String contextPath = request.getContextPath();
-
-        // Retirer le contexte de l'application si nécessaire
-        String relativeURI = requestURI.substring(contextPath.length());
-
-        // Afficher l'URL dans la console ou dans la réponse HTTP
-        System.out.println("\n URL tapée par l'utilisateur : " + url.toString());
-        System.out.println(" Partie de l'URL après le nom d'hôte et le port : " + relativeURI);
+        String relativeURI = request.getServletPath();
 
         try {
             boolean isPresent = listMapping.containsKey(relativeURI);
+            
             if (!isPresent) {
-                // 404 not found 
-               display404NotFound(out, url.toString());
-               return;           
+                response.sendError(404);
+                return;           
             }
 
             // Mapping correspondant a la requette tapee qui a  (Method, Class)
             Mapping mapping =  listMapping.get(relativeURI);
-            print(response);
-            out.println("<ul><h2> URL : " + relativeURI + "</h2>");
-            out.println("<li> Controller class name :  "+ mapping.getClass1().getName() +" </li><li> Method name : "+ mapping.getMethod().getName() +"</li></ul>");
 
             // invoke methode 
             Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
             Object valueFunction = mapping.getMethod().invoke(instance);
 
-            out.println("Valeur de la fonction : " + valueFunction.toString());
+            if (valueFunction instanceof ModelView) {
+
+                ModelView modelAndView = (ModelView)valueFunction;
+
+                String nameView = modelAndView.getViewName();
+                HashMap<String, Object> listKeyAndValue = modelAndView.getData();
+
+                for (Map.Entry<String, Object> map : listKeyAndValue.entrySet()) {
+                    request.setAttribute(map.getKey(),  map.getValue());
+                }
+
+                RequestDispatcher dispatcher = request.getRequestDispatcher(nameView);
+                dispatcher.forward(request, response);
+            }
+            else{
+                print(response);
+                out.println("<ul><h2> URL : " + relativeURI + "</h2>");
+                out.println("<li> Controller class name :  "+ mapping.getClass1().getName() +" </li><li> Method name : "+ mapping.getMethod().getName() +"</li></ul>");
+                out.println("<ul><li> Valeur de la fonction :  "+ valueFunction.toString() + "</li></ul>");
+
+            }
+
         } 
         catch (Exception e) {
             e.printStackTrace();
