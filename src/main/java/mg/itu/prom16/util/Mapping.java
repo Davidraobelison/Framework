@@ -3,8 +3,9 @@ package mg.itu.prom16.util;
 import java.lang.reflect.Method;
 
 public class Mapping {
-    Method method;
+    
     Class<?> class1;
+    Method method;
 
     
     public Mapping(Class<?> class1, Method method) {
