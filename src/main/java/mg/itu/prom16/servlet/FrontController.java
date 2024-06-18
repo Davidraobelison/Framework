@@ -14,17 +14,20 @@ import java.util.HashMap;
 
 import mg.itu.prom16.annotation.Controller;
 import mg.itu.prom16.annotation.Get;
+import mg.itu.prom16.annotation.Post;
 import mg.itu.prom16.exception.DuplicateUrlException;
 import mg.itu.prom16.exception.InvalidReturnTypeException;
 import mg.itu.prom16.exception.PackageNotFoundException;
 import mg.itu.prom16.util.ClassScanner;
 import mg.itu.prom16.util.Mapping;
+import mg.itu.prom16.util.MethodParameterParser;
 import mg.itu.prom16.util.ModelView;
 
 
 public class FrontController extends HttpServlet {
     private String basePackage ;
     private HashMap<String , Mapping> listMapping;
+
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -42,6 +45,14 @@ public class FrontController extends HttpServlet {
         catch (Exception ex){
             throw new ServletException(ex);
         }
+    }
+
+    protected void print(HttpServletResponse response) throws IOException{
+        response.setContentType("text/html");
+        PrintWriter out = response.getWriter();
+        out.println("<html><head><title>Servlet Response</title></head><body>");
+        out.println("<p>Hello ! </p>");
+        out.println("</body></html>");
     }
 
     protected void displayListMapping(PrintWriter out) {
@@ -62,6 +73,7 @@ public class FrontController extends HttpServlet {
                 ModelView modelAndView = (ModelView)valueFunction;
 
                 String nameView = modelAndView.getViewName();
+                out.print(nameView);
                 HashMap<String, Object> listKeyAndValue = modelAndView.getData();
 
                 for (Map.Entry<String, Object> map : listKeyAndValue.entrySet()) {
@@ -107,6 +119,16 @@ public class FrontController extends HttpServlet {
         
     }
 
+    protected String getMethod(Method method) {
+        if (method.getAnnotation(Get.class) != null) {
+            return "GET";
+        }      
+        else if (method.getAnnotation(Post.class) != null) {
+            return "POST";
+        }  
+        return "OTHER";
+    }
+
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException { 
 
@@ -120,9 +142,10 @@ public class FrontController extends HttpServlet {
             }
 
             Mapping mapping =  listMapping.get(relativeURI);
-                
+            
             Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
-            Object valueFunction = mapping.getMethod().invoke(instance);
+            List<Object> listArgs = MethodParameterParser.parseParameters(request, mapping.getMethod());
+            Object valueFunction = mapping.getMethod().invoke(instance, listArgs.toArray());
             dispatcher(request, response, valueFunction);
             
         } 
