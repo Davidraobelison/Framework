@@ -142,9 +142,13 @@ public class FrontController extends HttpServlet {
             }
 
             Mapping mapping =  listMapping.get(relativeURI);
+
+            System.out.println();
             
             Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
             List<Object> listArgs = MethodParameterParser.parseParameters(request, mapping.getMethod());
+
+            
             Object valueFunction = mapping.getMethod().invoke(instance, listArgs.toArray());
             dispatcher(request, response, valueFunction);
             
