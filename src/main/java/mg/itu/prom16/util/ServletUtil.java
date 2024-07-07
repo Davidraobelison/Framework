@@ -12,12 +12,13 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-public class MethodParameterParser {
+public class ServletUtil {
 
     public static List<Object> matchValues(HttpServletRequest request, Method method) throws Exception{
         Enumeration<String> enumeration = request.getParameterNames(); 
         List<Object> parsedArgs = new ArrayList<>();
         List<String> nameParams = new ArrayList<>();
+        // List<String> nameParamsNotSame = new ArrayList<>();
              
         while (enumeration.asIterator().hasNext()) {
             String nameForm = enumeration.nextElement();
@@ -87,6 +88,7 @@ public class MethodParameterParser {
                 else if (nameParameter.equals(nameForm2) && !isObject) {
                     parsedArgs.add(request.getParameter(nameParameter));
                 } 
+                // eto pb sisa
             }
         }
         return parsedArgs;
@@ -97,11 +99,20 @@ public class MethodParameterParser {
 
         for (Parameter arg : method.getParameters()) {
             
+            if (arg.getType().equals(MySession.class)) {
+                Object object = MySession.class.getDeclaredConstructor().newInstance();
+                MySession session = (MySession) object;
+                session.setSession(request.getSession());
+                parsedArgs.add(session);
+                continue;
+            }
+
+            String annotName;
+            Object value = null;
             RequestParam requestParam = arg.getAnnotation(RequestParam.class);
             ModelParam modelParam = arg.getAnnotation(ModelParam.class);
 
-            Object value = null;
-            if (modelParam != null) { // Object
+            if (modelParam != null) {
                 String valueParam = modelParam.value();
                 if (valueParam.isEmpty()) {
                     valueParam = arg.getName();
@@ -118,9 +129,7 @@ public class MethodParameterParser {
                 }
                 value = o;
             }
-
-            String annotName;
-            if (requestParam != null) {
+            else if (requestParam != null) {
                 if (requestParam.value().isEmpty()) {
                     annotName = arg.getName();
                 }
@@ -129,8 +138,45 @@ public class MethodParameterParser {
                 }
                 value = request.getParameter(annotName);
             }
+            else {
+                throw new Exception("Annotation not found");
+            }
             parsedArgs.add(value);
         }
         return parsedArgs;
+    }
+
+    private static Object parseValue(String value, Class<?> type) {
+        if (type.equals(String.class)) {
+            return value;
+        } else if (type.equals(Integer.class) || type.equals(int.class)) {
+            return Integer.parseInt(value);
+        } else if (type.equals(Double.class) || type.equals(double.class)) {
+            return Double.parseDouble(value);
+        } else if (type.equals(Boolean.class) || type.equals(boolean.class)) {
+            return Boolean.parseBoolean(value);
+        }
+        else {
+            throw new IllegalArgumentException("Type de paramètre non supporté: " + type);
+        }
+    }
+
+    public static void putSession(HttpServletRequest request, Object obj) throws Exception {
+       Field[] fields = obj.getClass().getDeclaredFields();
+       
+       for (Field field : fields) {
+            if (field.getType().equals(MySession.class)) {
+                field.setAccessible(true);
+                Object object = field.get(obj);
+
+                if (object == null) {
+                    object = MySession.class.getDeclaredConstructor().newInstance();
+                    field.set(obj, object);
+                    MySession session = (MySession) object;
+                    session.setSession(request.getSession());
+                    break;
+                }
+            }
+       }
     }
 }
