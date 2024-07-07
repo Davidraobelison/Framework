@@ -20,7 +20,7 @@ import mg.itu.prom16.exception.InvalidReturnTypeException;
 import mg.itu.prom16.exception.PackageNotFoundException;
 import mg.itu.prom16.util.ClassScanner;
 import mg.itu.prom16.util.Mapping;
-import mg.itu.prom16.util.MethodParameterParser;
+import mg.itu.prom16.util.ServletUtil;
 import mg.itu.prom16.util.ModelView;
 
 
@@ -40,19 +40,10 @@ public class FrontController extends HttpServlet {
         catch (PackageNotFoundException | DuplicateUrlException e) {
             e.printStackTrace();
             throw new Error(e.getMessage());
-            // throw new ServletException("Build failed : " , e);
         }
         catch (Exception ex){
             throw new ServletException(ex);
         }
-    }
-
-    protected void print(HttpServletResponse response) throws IOException{
-        response.setContentType("text/html");
-        PrintWriter out = response.getWriter();
-        out.println("<html><head><title>Servlet Response</title></head><body>");
-        out.println("<p>Hello ! </p>");
-        out.println("</body></html>");
     }
 
     protected void displayListMapping(PrintWriter out) {
@@ -73,14 +64,14 @@ public class FrontController extends HttpServlet {
                 ModelView modelAndView = (ModelView)valueFunction;
 
                 String nameView = modelAndView.getViewName();
-                out.print(nameView);
                 HashMap<String, Object> listKeyAndValue = modelAndView.getData();
-
+                
                 for (Map.Entry<String, Object> map : listKeyAndValue.entrySet()) {
                     request.setAttribute(map.getKey(),  map.getValue());
                 }
 
-                RequestDispatcher dispatcher = request.getRequestDispatcher(nameView);
+                String queryString = request.getQueryString();
+                RequestDispatcher dispatcher = request.getRequestDispatcher(nameView +"?" + queryString);
                 dispatcher.forward(request, response);
             }
             else if (valueFunction instanceof String) { // si string
@@ -131,8 +122,8 @@ public class FrontController extends HttpServlet {
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException { 
-
         String relativeURI = request.getServletPath();
+
         try {
             boolean isPresent = listMapping.containsKey(relativeURI);
             
@@ -140,18 +131,19 @@ public class FrontController extends HttpServlet {
                 response.sendError(HttpServletResponse.SC_NOT_FOUND);
                 return;           
             }
-
             Mapping mapping =  listMapping.get(relativeURI);
             
             Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
-            List<Object> listArgs = MethodParameterParser.parseParameters(request, mapping.getMethod());
+            List<Object> listArgs = ServletUtil.parseParameters(request, mapping.getMethod());
+            ServletUtil.putSession(request,  instance);
+
             Object valueFunction = mapping.getMethod().invoke(instance, listArgs.toArray());
             dispatcher(request, response, valueFunction);
-            
         } 
-        catch (Exception e) {
-            e.printStackTrace();
-            throw new ServletException(e);            
+        catch (Exception e) {   
+            request.setAttribute("error", e.getMessage());
+            RequestDispatcher dispatcher = request.getRequestDispatcher("Error.jsp");
+            dispatcher.forward(request, response);       
         }
     }
 
@@ -162,7 +154,6 @@ public class FrontController extends HttpServlet {
 
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-                System.out.println(request.getServletPath());
         processRequest(request, response);
     }
 
