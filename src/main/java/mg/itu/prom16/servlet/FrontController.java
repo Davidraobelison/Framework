@@ -15,10 +15,12 @@ import java.util.HashMap;
 import mg.itu.prom16.annotation.Controller;
 import mg.itu.prom16.annotation.Get;
 import mg.itu.prom16.annotation.Post;
+import mg.itu.prom16.annotation.RestApi;
 import mg.itu.prom16.exception.DuplicateUrlException;
 import mg.itu.prom16.exception.InvalidReturnTypeException;
 import mg.itu.prom16.exception.PackageNotFoundException;
 import mg.itu.prom16.util.ClassScanner;
+import mg.itu.prom16.util.JsonParserUtil;
 import mg.itu.prom16.util.Mapping;
 import mg.itu.prom16.util.ServletUtil;
 import mg.itu.prom16.util.ModelView;
@@ -53,6 +55,23 @@ public class FrontController extends HttpServlet {
 
             out.println("<ul> URL : " + key + "</ul>");
             out.println("<li> Class name :  "+ value.getClass1().getSimpleName() +" </li> <li> Method name : "+ value.getMethod().getName() +"</li>");
+        }
+    }
+
+    protected void doRestApi(Object valueFunction, HttpServletResponse response) throws Exception {
+        try {
+            if (valueFunction instanceof ModelView) {
+                ModelView modelView = (ModelView) valueFunction;
+                HashMap<String, Object> listKeyAndValue = modelView.getData();
+                String dataString = JsonParserUtil.objectToJson(listKeyAndValue);
+                response.getWriter().println(dataString);
+            }
+            else {
+                String dataString = JsonParserUtil.objectToJson(valueFunction);
+                response.getWriter().println(dataString);
+            }
+        } catch (Exception e) {
+            throw new ServletException(e);
         }
     }
 
@@ -136,14 +155,21 @@ public class FrontController extends HttpServlet {
                 response.sendError(HttpServletResponse.SC_NOT_FOUND);
                 return;           
             }
-            Mapping mapping =  listMapping.get(relativeURI);
             
+            Mapping mapping =  listMapping.get(relativeURI);
             Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
             List<Object> listArgs = ServletUtil.parseParameters(request, mapping.getMethod());
-            ServletUtil.putSession(request,  instance);
 
+            ServletUtil.putSession(request,  instance);
             Object valueFunction = mapping.getMethod().invoke(instance, listArgs.toArray());
-            dispatcher(request, response, valueFunction);
+            
+            RestApi restApi = mapping.getMethod().getAnnotation(RestApi.class);
+            if (restApi != null) {
+                response.setContentType("text/json");
+                doRestApi(valueFunction, response);
+            } else {
+                dispatcher(request, response, valueFunction);
+            }
         } 
         catch (Exception e) {   
             request.setAttribute("error", e.getMessage());
@@ -151,6 +177,9 @@ public class FrontController extends HttpServlet {
             dispatcher.forward(request, response);       
         }
     }
+
+
+    
 
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
