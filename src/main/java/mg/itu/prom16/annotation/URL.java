@@ -1,10 +1,10 @@
 package mg.itu.prom16.annotation;
+
 import java.lang.annotation.*;
 
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD})
 
-public @interface POST {
+public @interface URL {
     String value() default "";
 }
-

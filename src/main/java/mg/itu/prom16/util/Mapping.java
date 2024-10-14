@@ -1,28 +1,18 @@
 package mg.itu.prom16.util;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
 
 public class Mapping {
     
     Class<?> class1;
-    Method method;
+    HashMap<String, Method> apiRequests;
 
     
-    public Mapping(Class<?> class1, Method method) {
+    public Mapping(Class<?> class1, HashMap<String, Method> apiRequests) {
         this.class1 = class1;
-        this.method = method;
+        this.apiRequests = apiRequests;
     }
-
-
-    public Method getMethod() {
-        return method;
-    }
-
-
-    public void setMethod(Method method) {
-        this.method = method;
-    }
-
 
     public Class<?> getClass1() {
         return class1;
@@ -30,5 +20,13 @@ public class Mapping {
 
     public void setClass1(Class<?> class1) {
         this.class1 = class1;
+    }
+
+    public HashMap<String, Method> getApiRequests() {
+        return apiRequests;
+    }
+
+    public void setApiRequests(HashMap<String, Method> apiRequests) {
+        this.apiRequests = apiRequests;
     }
 }
