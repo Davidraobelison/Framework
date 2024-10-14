@@ -10,15 +10,20 @@ import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.HashMap;
 
 import mg.itu.prom16.annotation.Controller;
-import mg.itu.prom16.annotation.Get;
-import mg.itu.prom16.annotation.Post;
+import mg.itu.prom16.annotation.GET;
+import mg.itu.prom16.annotation.POST;
+import mg.itu.prom16.annotation.RestApi;
+import mg.itu.prom16.annotation.URL;
 import mg.itu.prom16.exception.DuplicateUrlException;
 import mg.itu.prom16.exception.InvalidReturnTypeException;
 import mg.itu.prom16.exception.PackageNotFoundException;
+import mg.itu.prom16.util.ApiRequest;
 import mg.itu.prom16.util.ClassScanner;
+import mg.itu.prom16.util.JsonParserUtil;
 import mg.itu.prom16.util.Mapping;
 import mg.itu.prom16.util.ServletUtil;
 import mg.itu.prom16.util.ModelView;
@@ -46,13 +51,22 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    protected void displayListMapping(PrintWriter out) {
-        for (Map.Entry<String, Mapping> e : listMapping.entrySet()) {
-            String key = e.getKey();
-            Mapping value = e.getValue();
-
-            out.println("<ul> URL : " + key + "</ul>");
-            out.println("<li> Class name :  "+ value.getClass1().getSimpleName() +" </li> <li> Method name : "+ value.getMethod().getName() +"</li>");
+    protected void doRestApi(Object valueFunction, HttpServletResponse response) throws Exception {
+        try {
+            if (valueFunction instanceof ModelView) {
+                ModelView modelView = (ModelView) valueFunction;
+                HashMap<String, Object> listKeyAndValue = modelView.getData();
+                String dataString = JsonParserUtil.objectToJson(listKeyAndValue);
+                response.getWriter().println(dataString);
+                response.getWriter().close();
+            }
+            else {
+                String dataString = JsonParserUtil.objectToJson(valueFunction);
+                response.getWriter().println(dataString);
+                response.getWriter().close();
+            }
+        } catch (Exception e) {
+            throw new ServletException(e);
         }
     }
 
@@ -94,15 +108,30 @@ public class FrontController extends HttpServlet {
             Method[] methods = class1.getDeclaredMethods();
         
             for (Method method : methods) {
-                if (method.isAnnotationPresent(Get.class)) {
-                    String valueAnnotation = method.getAnnotation(Get.class).value();
-                    Mapping mapping = new Mapping(class1, method);
+                if (method.isAnnotationPresent(URL.class)) {
+                    String valueAnnotation = method.getAnnotation(URL.class).value();
                     
+                    String verb = getMethod(method);
                     if (!listMapping.containsKey(valueAnnotation)) {
+                        
+                        HashMap<String, Method> apiRequests = new HashMap<String, Method>();
+                        apiRequests.put(verb, method);
+                        Mapping mapping = new Mapping(class1, apiRequests);
+
                         this.listMapping.put(valueAnnotation, mapping);
                     }
                     else {
-                        throw new DuplicateUrlException(valueAnnotation);
+                        Mapping map = listMapping.get(valueAnnotation);
+                        HashMap<String, Method> apiRequests2 = map.getApiRequests();
+
+                        if (!apiRequests2.containsKey(verb)) {
+                            apiRequests2.put(verb, method);
+                            this.listMapping.put(valueAnnotation, map);
+                        }
+                        else {
+                            throw new DuplicateUrlException(valueAnnotation, verb);
+                        }
+                        
                     }
                 }
             }
@@ -111,14 +140,47 @@ public class FrontController extends HttpServlet {
     }
 
     protected String getMethod(Method method) {
-        if (method.getAnnotation(Get.class) != null) {
+        if (method.getAnnotation(GET.class) != null) {
             return "GET";
         }      
-        else if (method.getAnnotation(Post.class) != null) {
+        else if (method.getAnnotation(POST.class) != null) {
             return "POST";
         }  
-        return "OTHER";
+        return "GET"; //par defaut si il y a pas de verb
     }
+
+    protected void isValidVerb(HttpServletRequest request, Method method) throws Exception {
+        String verbRequest = request.getMethod();
+        String verbMethod = getMethod(method);
+
+        System.out.println("REQUEST : "+ verbRequest);
+        System.out.println("Method : "+ verbMethod);
+
+        if(!verbMethod.equals(verbRequest)) {
+            throw new Exception("HTTP method mismatch: expected " + verbMethod + ", but received " + verbRequest);
+        }
+    }
+
+    protected Method getMethodByVerb(HttpServletRequest request, Mapping mapping) throws Exception {
+        String verb = request.getMethod();
+        HashMap<String, Method> liHashMap = mapping.getApiRequests();
+        Method method = liHashMap.get(verb);
+        if (method != null) {
+            isValidVerb(request, method);
+            return method;
+        }
+
+        StringBuilder keysString = new StringBuilder();
+        for (String key : liHashMap.keySet()) {
+            keysString.append(key).append(", ");
+        }
+        if (keysString.length() > 0) {
+            keysString.setLength(keysString.length() - 2); // Retirer les deux derniers caractères (", ")
+        }
+
+        throw new Exception("HTTP method mismatch: expected " + keysString.toString() + " but received "+ verb);
+    }
+
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException { 
@@ -131,26 +193,37 @@ public class FrontController extends HttpServlet {
 
         try {
             boolean isPresent = listMapping.containsKey(relativeURI);
-            
             if (!isPresent) {
                 response.sendError(HttpServletResponse.SC_NOT_FOUND);
                 return;           
             }
-            Mapping mapping =  listMapping.get(relativeURI);
             
-            Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
-            List<Object> listArgs = ServletUtil.parseParameters(request, mapping.getMethod());
-            ServletUtil.putSession(request,  instance);
+            Mapping mapping =  listMapping.get(relativeURI);
+            Method method = getMethodByVerb(request, mapping);
 
-            Object valueFunction = mapping.getMethod().invoke(instance, listArgs.toArray());
-            dispatcher(request, response, valueFunction);
+            Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
+            List<Object> listArgs = ServletUtil.parseParameters(request, method);
+
+            ServletUtil.putSession(request,  instance);
+            Object valueFunction = method.invoke(instance, listArgs.toArray());
+            
+            RestApi restApi = method.getAnnotation(RestApi.class);
+            if (restApi != null) {
+                response.setContentType("text/json");
+                doRestApi(valueFunction, response);
+            } else {
+                dispatcher(request, response, valueFunction);
+            }
         } 
         catch (Exception e) {   
-            request.setAttribute("error", e.getMessage());
-            RequestDispatcher dispatcher = request.getRequestDispatcher("Error.jsp");
-            dispatcher.forward(request, response);       
+            e.printStackTrace();
+            response.setContentType("text/html;charset=UTF-8");    
+            PrintWriter out = response.getWriter();
+            out.println("<p>" + e.getMessage() + "</p>");
+            out.close();  
         }
     }
+
 
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
