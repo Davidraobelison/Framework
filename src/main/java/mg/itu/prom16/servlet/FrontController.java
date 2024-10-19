@@ -125,8 +125,16 @@ public class FrontController extends HttpServlet {
                         HashMap<String, Method> apiRequests2 = map.getApiRequests();
 
                         if (!apiRequests2.containsKey(verb)) {
-                            apiRequests2.put(verb, method);
-                            this.listMapping.put(valueAnnotation, map);
+                            if (class1.getSimpleName().equals(map.getClass1().getSimpleName())) {
+                                apiRequests2.put(verb, method);
+                                this.listMapping.put(valueAnnotation, map);
+                            }
+                            else {
+                                HashMap<String, Method> apiRequests = new HashMap<String, Method>();
+                                apiRequests.put(verb, method);
+                                Mapping mapping = new Mapping(class1, apiRequests);
+                                this.listMapping.put(valueAnnotation, mapping);
+                            }
                         }
                         else {
                             throw new DuplicateUrlException(valueAnnotation, verb);
