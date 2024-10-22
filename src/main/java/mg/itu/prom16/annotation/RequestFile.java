@@ -2,9 +2,9 @@ package mg.itu.prom16.annotation;
 import java.lang.annotation.*;
 
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.METHOD})
+@Target({ElementType.PARAMETER})
 
-public @interface POST {
+public @interface RequestFile {
     String value() default "";
 }
 

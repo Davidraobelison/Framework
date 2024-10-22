@@ -2,19 +2,19 @@ package mg.itu.prom16.util;
 
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
 import mg.itu.prom16.annotation.ModelParam;
+import mg.itu.prom16.annotation.MultiPartFile;
+import mg.itu.prom16.annotation.RequestFile;
 import mg.itu.prom16.annotation.RequestParam;
-import mg.itu.prom16.annotation.RestApi;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public class ServletUtil {
-
     public static List<Object> parseParameters(HttpServletRequest request, Method method) throws Exception {
         List<Object> parsedArgs = new ArrayList<>();
 
@@ -25,6 +25,11 @@ public class ServletUtil {
                 MySession session = (MySession) object;
                 session.setSession(request.getSession());
                 parsedArgs.add(session);
+                continue;
+            }
+
+            if (arg.isAnnotationPresent(RequestFile.class)) {
+                setMultipartFile(arg, request, parsedArgs);
                 continue;
             }
 
@@ -65,6 +70,35 @@ public class ServletUtil {
             parsedArgs.add(value);
         }
         return parsedArgs;
+    }
+
+    private static void setMultipartFile(Parameter argParameter, HttpServletRequest request, List<Object> values) throws Exception {
+        RequestFile requestFile = argParameter.getAnnotation(RequestFile.class);
+        String nameFileInput = "";
+        if (requestFile == null || requestFile.value().isEmpty()) {
+            nameFileInput = argParameter.getName();
+        }
+        else {
+            nameFileInput = requestFile.value();
+        }
+    
+        Part part = request.getPart(nameFileInput);
+        if (part == null) {
+            values.add(null);
+            return;
+        }
+
+        if (argParameter.getType().isAssignableFrom(MultiPartFile.class)) {
+            Class<?> paramaType = argParameter.getType();
+            Constructor<?> constructor = paramaType.getDeclaredConstructor();
+            Object o = constructor.newInstance();
+        
+            MultiPartFile multiPartFile = (MultiPartFile) o;
+            multiPartFile.buildInstance(part, "1859");
+            values.add(multiPartFile);
+        } else {
+            throw new Exception("Parameter not valid Exception for File!");
+        }
     }
 
     private static Object parseValue(String value, Class<?> type) {
