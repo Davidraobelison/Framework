@@ -4,13 +4,13 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.*;
+import jakarta.servlet.annotation.MultipartConfig;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
-import java.util.ArrayList;
 import java.util.HashMap;
 
 import mg.itu.prom16.annotation.Controller;
@@ -29,6 +29,11 @@ import mg.itu.prom16.util.ServletUtil;
 import mg.itu.prom16.util.ModelView;
 
 
+@MultipartConfig(
+    fileSizeThreshold = 1024 * 1024, // 1 MB
+    maxFileSize = 1024 * 1024 * 10,  // 10 MB
+    maxRequestSize = 1024 * 1024 * 50 // 50 MB
+)
 public class FrontController extends HttpServlet {
     private String basePackage ;
     private HashMap<String , Mapping> listMapping;
@@ -100,6 +105,20 @@ public class FrontController extends HttpServlet {
         }
     }
 
+
+    void showListMap () {
+        System.out.println("\n Affichage ");
+        for (Map.Entry<String, Mapping> entry : listMapping.entrySet()) {
+            String keyUrl = entry.getKey();
+            Mapping mapping = entry.getValue();
+
+            System.out.println("URL =" + keyUrl);
+            System.out.println(mapping.toString());
+        }
+        System.out.println("end \n");
+
+    }
+
     protected void initHashMap() throws DuplicateUrlException, PackageNotFoundException, Exception {
         List<Class<?>> classes = ClassScanner.scanClasses(basePackage, Controller.class);
         listMapping = new HashMap<String, Mapping>();
@@ -113,28 +132,18 @@ public class FrontController extends HttpServlet {
                     
                     String verb = getMethod(method);
                     if (!listMapping.containsKey(valueAnnotation)) {
-                        
-                        HashMap<String, Method> apiRequests = new HashMap<String, Method>();
-                        apiRequests.put(verb, method);
-                        Mapping mapping = new Mapping(class1, apiRequests);
 
-                        this.listMapping.put(valueAnnotation, mapping);
+                        ApiRequest api = new ApiRequest(class1, method);
+                        Mapping map = new Mapping();
+                        map.addRequest(verb, api);
+
+                        this.listMapping.put(valueAnnotation, map);
                     }
                     else {
                         Mapping map = listMapping.get(valueAnnotation);
-                        HashMap<String, Method> apiRequests2 = map.getApiRequests();
 
-                        if (!apiRequests2.containsKey(verb)) {
-                            if (class1.getSimpleName().equals(map.getClass1().getSimpleName())) {
-                                apiRequests2.put(verb, method);
-                                this.listMapping.put(valueAnnotation, map);
-                            }
-                            else {
-                                HashMap<String, Method> apiRequests = new HashMap<String, Method>();
-                                apiRequests.put(verb, method);
-                                Mapping mapping = new Mapping(class1, apiRequests);
-                                this.listMapping.put(valueAnnotation, mapping);
-                            }
+                        if (!map.containsKey(verb)) {
+                            map.addRequest(verb, new ApiRequest(class1, method));
                         }
                         else {
                             throw new DuplicateUrlException(valueAnnotation, verb);
@@ -144,7 +153,6 @@ public class FrontController extends HttpServlet {
                 }
             }
         }
-        
     }
 
     protected String getMethod(Method method) {
@@ -169,26 +177,6 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    protected Method getMethodByVerb(HttpServletRequest request, Mapping mapping) throws Exception {
-        String verb = request.getMethod();
-        HashMap<String, Method> liHashMap = mapping.getApiRequests();
-        Method method = liHashMap.get(verb);
-        if (method != null) {
-            isValidVerb(request, method);
-            return method;
-        }
-
-        StringBuilder keysString = new StringBuilder();
-        for (String key : liHashMap.keySet()) {
-            keysString.append(key).append(", ");
-        }
-        if (keysString.length() > 0) {
-            keysString.setLength(keysString.length() - 2); // Retirer les deux derniers caractères (", ")
-        }
-
-        throw new Exception("HTTP method mismatch: expected " + keysString.toString() + " but received "+ verb);
-    }
-
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException { 
@@ -206,10 +194,13 @@ public class FrontController extends HttpServlet {
                 return;           
             }
             
-            Mapping mapping =  listMapping.get(relativeURI);
-            Method method = getMethodByVerb(request, mapping);
+            Mapping mapping =  this.listMapping.get(relativeURI);
+            mapping.isValidVerb(request);
 
-            Object instance = mapping.getClass1().getDeclaredConstructor().newInstance();
+            ApiRequest apiRequest = mapping.getRequest(request.getMethod());
+            Method method = apiRequest.getMethod();
+
+            Object instance = apiRequest.getClass1().getDeclaredConstructor().newInstance();
             List<Object> listArgs = ServletUtil.parseParameters(request, method);
 
             ServletUtil.putSession(request,  instance);
@@ -226,6 +217,7 @@ public class FrontController extends HttpServlet {
         catch (Exception e) {   
             e.printStackTrace();
             response.setContentType("text/html;charset=UTF-8");    
+            response.setStatus(500);
             PrintWriter out = response.getWriter();
             out.println("<p>" + e.getMessage() + "</p>");
             out.close();  
