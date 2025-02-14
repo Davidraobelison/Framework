@@ -2,13 +2,16 @@ package mg.itu.prom16.servlet;
 
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.*;
 import jakarta.servlet.annotation.MultipartConfig;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -19,13 +22,20 @@ import mg.itu.prom16.annotation.POST;
 import mg.itu.prom16.annotation.RestApi;
 import mg.itu.prom16.annotation.URL;
 import mg.itu.prom16.exception.DuplicateUrlException;
+import mg.itu.prom16.exception.InvalidConstraintException;
 import mg.itu.prom16.exception.InvalidReturnTypeException;
 import mg.itu.prom16.exception.PackageNotFoundException;
+import mg.itu.prom16.exception.UnauthorizedException;
 import mg.itu.prom16.util.ApiRequest;
+import mg.itu.prom16.util.ApplicationContext;
+import mg.itu.prom16.util.AuthorizationHandler;
 import mg.itu.prom16.util.ClassScanner;
 import mg.itu.prom16.util.JsonParserUtil;
 import mg.itu.prom16.util.Mapping;
 import mg.itu.prom16.util.ServletUtil;
+import mg.itu.prom16.util.UrlMappingResolver;
+import mg.itu.prom16.validation.BindingResult;
+import mg.itu.prom16.validation.annotation.ErrorHandlerUrl;
 import mg.itu.prom16.util.ModelView;
 
 
@@ -35,16 +45,20 @@ import mg.itu.prom16.util.ModelView;
     maxRequestSize = 1024 * 1024 * 50 // 50 MB
 )
 public class FrontController extends HttpServlet {
-    private String basePackage ;
-    private HashMap<String , Mapping> listMapping;
-
+    protected String basePackage;
+    protected String componentScanPackages;
+    protected HashMap<String , Mapping> listMapping;
+    protected ServletConfig config;
+    protected ApplicationContext applicationContext; // Ajoutez un champ pour votre contexte
 
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
-        // Obtenez la valeur du package
+        this.config = config;        // Obtenez la valeur du package
         basePackage = config.getInitParameter("basePackageName");
+        componentScanPackages = config.getInitParameter("componentScanPackages");
         try {
+            applicationContext = new ApplicationContext(componentScanPackages);
             initHashMap();
         } 
         catch (PackageNotFoundException | DuplicateUrlException e) {
@@ -75,7 +89,7 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    protected void dispatcher (HttpServletRequest request , HttpServletResponse response,  Object valueFunction) throws InvalidReturnTypeException, Exception{
+    protected void dispatcher(HttpServletRequest request , HttpServletResponse response,  Object valueFunction) throws InvalidReturnTypeException, Exception{
         try{
             PrintWriter out = response.getWriter();
             if (valueFunction instanceof ModelView) {
@@ -103,20 +117,6 @@ public class FrontController extends HttpServlet {
         catch (Exception e) {
             throw new ServletException(e);
         }
-    }
-
-
-    void showListMap () {
-        System.out.println("\n Affichage ");
-        for (Map.Entry<String, Mapping> entry : listMapping.entrySet()) {
-            String keyUrl = entry.getKey();
-            Mapping mapping = entry.getValue();
-
-            System.out.println("URL =" + keyUrl);
-            System.out.println(mapping.toString());
-        }
-        System.out.println("end \n");
-
     }
 
     protected void initHashMap() throws DuplicateUrlException, PackageNotFoundException, Exception {
@@ -165,15 +165,45 @@ public class FrontController extends HttpServlet {
         return "GET"; //par defaut si il y a pas de verb
     }
 
-    protected void isValidVerb(HttpServletRequest request, Method method) throws Exception {
-        String verbRequest = request.getMethod();
-        String verbMethod = getMethod(method);
 
-        System.out.println("REQUEST : "+ verbRequest);
-        System.out.println("Method : "+ verbMethod);
+    protected BindingResult hasErrors(List<Object> argObjects) {
+        for (Object object : argObjects) {
+            if (object instanceof BindingResult) {
+                BindingResult br = (BindingResult) object;
+                if (br.hasErros()) {
+                    return br;
+                }
+            }
+        }
+        return null;
+    }
 
-        if(!verbMethod.equals(verbRequest)) {
-            throw new Exception("HTTP method mismatch: expected " + verbMethod + ", but received " + verbRequest);
+
+    protected void setBackPage(Map<String, String> pathVariables, HttpServletRequest request,HttpServletResponse response,  BindingResult rs, Method method) throws Exception
+    {
+        if (method.isAnnotationPresent(ErrorHandlerUrl.class)) {
+            ServletUtil servletUtil = new ServletUtil(applicationContext);
+            ErrorHandlerUrl errorHandlerUrl = method.getAnnotation(ErrorHandlerUrl.class);
+            String handlerUrlPage = errorHandlerUrl.url();
+            String verb = errorHandlerUrl.verb();
+
+            request = new HttpServletRequestWrapper(request) {
+                @Override
+                public String getMethod() {
+                    return "GET";
+                }
+            };
+
+            Mapping mapping =  this.listMapping.get(handlerUrlPage);
+            Object value = servletUtil.invokeMethod(pathVariables, config, mapping, request,response, verb);
+
+            if (value instanceof ModelView) {
+                rs.setBackPage((ModelView) value);  
+            } else {
+                throw new Exception("La page a retourner doit retourne une valeur de type ModelView sinon aza mampiasa ny spring nay ");
+            }
+        } else {
+            throw new Exception("Annotation ErrorHandlerUrl not found on this methode name :" + method.getName());
         }
     }
 
@@ -181,29 +211,34 @@ public class FrontController extends HttpServlet {
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException { 
         String relativeURI = request.getServletPath();
-        String queryString = request.getQueryString();
         
-        System.out.println(relativeURI);
-        System.out.println(queryString);
-
-
         try {
-            boolean isPresent = listMapping.containsKey(relativeURI);
-            if (!isPresent) {
+            UrlMappingResolver resolver = new UrlMappingResolver(listMapping);
+            UrlMappingResolver.MappingResult result = resolver.resolve(relativeURI);
+
+            if (result == null) {
+                // Aucun mapping trouvé
                 response.sendError(HttpServletResponse.SC_NOT_FOUND);
-                return;           
+                return;
             }
-            
-            Mapping mapping =  this.listMapping.get(relativeURI);
+            // Récupération du mapping et des variables extraites
+            Mapping mapping = result.getMapping();
+            Map<String, String> pathVariables = result.getPathVariables();
             mapping.isValidVerb(request);
 
             ApiRequest apiRequest = mapping.getRequest(request.getMethod());
+            Class<?> class1 = apiRequest.getClass1();
+            AuthorizationHandler.isAuthorizedGeneric(class1, request, config);
             Method method = apiRequest.getMethod();
 
-            Object instance = apiRequest.getClass1().getDeclaredConstructor().newInstance();
-            List<Object> listArgs = ServletUtil.parseParameters(request, method);
+            Object instance = applicationContext.getBean(apiRequest.getClass1());
+            List<Object> listArgs = ServletUtil.parseParameters(pathVariables, request, method);
 
+            BindingResult br = hasErrors(listArgs);
+            if (br != null) setBackPage(pathVariables, request,response, br, method);
+            
             ServletUtil.putSession(request,  instance);
+            AuthorizationHandler.isAuthorized(method, request, config);
             Object valueFunction = method.invoke(instance, listArgs.toArray());
             
             RestApi restApi = method.getAnnotation(RestApi.class);
@@ -214,14 +249,21 @@ public class FrontController extends HttpServlet {
                 dispatcher(request, response, valueFunction);
             }
         } 
-        catch (Exception e) {   
+        catch (InvalidConstraintException  e) {
+            e.printStackTrace();
+            throw new ServletException(e);
+        } catch (Exception e) {   
+            if (e instanceof UnauthorizedException) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, e.getMessage());
+                return;
+            }
             e.printStackTrace();
             response.setContentType("text/html;charset=UTF-8");    
             response.setStatus(500);
             PrintWriter out = response.getWriter();
             out.println("<p>" + e.getMessage() + "</p>");
             out.close();  
-        }
+        } 
     }
 
 
